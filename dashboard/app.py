@@ -1,11 +1,152 @@
-import streamlit as st
+import os
 import sqlite3
+import hashlib
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import hashlib
+import streamlit as st
 
+# ==================== INICIALIZAÇÃO DO BANCO ====================
 DB_PATH = "data/cs2_stats.db"
+RAW_PATH = "data/raw"
+
+def init_database():
+    """Cria e popula o banco se não existir."""
+    if os.path.exists(DB_PATH):
+        return
+
+    os.makedirs("data", exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS jogadores (
+            id INTEGER PRIMARY KEY, nome TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS times (
+            id INTEGER PRIMARY KEY, nome TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS partidas (
+            id INTEGER PRIMARY KEY, game_id INTEGER, torneio TEXT,
+            time1_id INTEGER, time1_nome TEXT, time2_id INTEGER, time2_nome TEXT,
+            score1_match INTEGER, score2_match INTEGER,
+            score1_game INTEGER, score2_game INTEGER,
+            mapa TEXT, data TEXT, time1_venceu INTEGER, tier TEXT
+        );
+        CREATE TABLE IF NOT EXISTS stats_jogador (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            partida_id INTEGER, jogador_id INTEGER, jogador_nome TEXT,
+            time_id INTEGER, kills INTEGER, deaths INTEGER, assists INTEGER,
+            adr REAL, kast REAL, kd_diff INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS metricas_jogador (
+            jogador_id INTEGER, jogador_nome TEXT, partidas INTEGER,
+            kills_total INTEGER, deaths_total INTEGER, assists_total INTEGER,
+            kd_ratio REAL, adr_medio REAL, kast_medio REAL,
+            kd_diff_total INTEGER, vitorias INTEGER, taxa_vitoria REAL
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+    # Carregar jogadores e times
+    for arquivo, tabela, cols_orig, cols_dest in [
+        ('players.csv', 'jogadores', ['player_id','player_name'], ['id','nome']),
+        ('teams.csv',   'times',     ['team_id','team_name'],     ['id','nome']),
+    ]:
+        path = f"{RAW_PATH}/{arquivo}"
+        if os.path.exists(path):
+            conn = sqlite3.connect(DB_PATH)
+            df = pd.read_csv(path)[cols_orig].drop_duplicates()
+            df.columns = cols_dest
+            df.to_sql(tabela, conn, if_exists='replace', index=False)
+            conn.close()
+
+    # Carregar partidas e stats
+    for arquivo, tier in [
+        ('cs2_tier1_games.csv','tier1'),
+        ('cs2_tier2_games.csv','tier2'),
+        ('cs2_tier3_games.csv','tier3'),
+    ]:
+        path = f"{RAW_PATH}/{arquivo}"
+        if not os.path.exists(path):
+            continue
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_csv(path)
+        df = df[df['is_total'] == 0].copy()
+
+        partidas = df[['game_id','tournament','team1_id','team1','team2_id','team2',
+                        'score1_match','score2_match','score1_game','score2_game',
+                        'map_name','datetime','team1_win']].copy()
+        partidas.columns = ['id','torneio','time1_id','time1_nome','time2_id','time2_nome',
+                            'score1_match','score2_match','score1_game','score2_game',
+                            'mapa','data','time1_venceu']
+        partidas['tier'] = tier
+        partidas = partidas.drop_duplicates(subset='id')
+        partidas.to_sql('partidas', conn, if_exists='append', index=False)
+
+        stats_rows = []
+        for _, row in df.iterrows():
+            for team in ['team1','team2']:
+                team_id = row[f'{team}_id']
+                for i in range(1, 6):
+                    player_id = row.get(f'{team}_player{i}_id')
+                    kills     = row.get(f'{team}_player{i}_kills')
+                    if pd.notna(player_id) and pd.notna(kills):
+                        stats_rows.append({
+                            'partida_id':   row['game_id'],
+                            'jogador_id':   int(player_id),
+                            'jogador_nome': row.get(f'{team}_player{i}'),
+                            'time_id':      team_id,
+                            'kills':        kills,
+                            'deaths':       row.get(f'{team}_player{i}_deaths'),
+                            'assists':      row.get(f'{team}_player{i}_assists'),
+                            'adr':          row.get(f'{team}_player{i}_adr'),
+                            'kast':         row.get(f'{team}_player{i}_kast'),
+                            'kd_diff':      row.get(f'{team}_player{i}_kddiff'),
+                        })
+        pd.DataFrame(stats_rows).to_sql('stats_jogador', conn, if_exists='append', index=False)
+        conn.close()
+
+    # Calcular métricas
+    conn = sqlite3.connect(DB_PATH)
+    df_all = pd.read_sql("""
+        SELECT s.jogador_id, s.jogador_nome, s.kills, s.deaths, s.assists,
+               s.adr, s.kast, s.kd_diff, p.time1_venceu,
+               CASE WHEN s.time_id = p.time1_id THEN 1 ELSE 0 END as jogou_no_time1
+        FROM stats_jogador s JOIN partidas p ON s.partida_id = p.id
+    """, conn)
+
+    def limpar_nome(n):
+        return n.split('(')[0].strip().rstrip(',').strip() if pd.notna(n) else n
+
+    df_all['jogador_nome'] = df_all['jogador_nome'].apply(limpar_nome)
+    df_all['venceu'] = (
+        (df_all['jogou_no_time1']==1) & (df_all['time1_venceu']==1) |
+        (df_all['jogou_no_time1']==0) & (df_all['time1_venceu']==0)
+    ).astype(int)
+    df_all['kd_ratio'] = df_all['kills'] / df_all['deaths'].replace(0,1)
+
+    metricas = df_all.groupby(['jogador_id','jogador_nome']).agg(
+        partidas=('kills','count'),
+        kills_total=('kills','sum'),
+        deaths_total=('deaths','sum'),
+        assists_total=('assists','sum'),
+        kd_ratio=('kd_ratio','mean'),
+        adr_medio=('adr','mean'),
+        kast_medio=('kast','mean'),
+        kd_diff_total=('kd_diff','sum'),
+        vitorias=('venceu','sum'),
+    ).reset_index()
+    metricas['taxa_vitoria'] = (metricas['vitorias'] / metricas['partidas'] * 100).round(1)
+    metricas['kd_ratio']  = metricas['kd_ratio'].round(2)
+    metricas['adr_medio'] = metricas['adr_medio'].round(1)
+    metricas['kast_medio']= metricas['kast_medio'].round(1)
+    metricas.to_sql('metricas_jogador', conn, if_exists='replace', index=False)
+    conn.close()
+
+# Rodar inicialização antes de qualquer coisa
+with st.spinner("Inicializando banco de dados... (apenas na primeira execução)"):
+    init_database()
 
 ACCENT = "#00FF87"
 ACCENT2 = "#8B5CF6"
