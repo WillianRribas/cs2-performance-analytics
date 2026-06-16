@@ -11,11 +11,18 @@ DB_PATH = "data/cs2_stats.db"
 RAW_PATH = "data/raw"
 
 def init_database():
-    """Cria e popula o banco se não existir."""
-    if os.path.exists(DB_PATH):
+    """Cria e popula o banco se não existir ou estiver vazio."""
+    os.makedirs("data", exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='metricas_jogador'")
+    ja_existe = cursor.fetchone()[0] > 0
+    cursor.execute("SELECT COUNT(*) FROM metricas_jogador") if ja_existe else None
+    n_rows = cursor.fetchone()[0] if ja_existe else 0
+    conn.close()
+    if ja_existe and n_rows > 0:
         return
 
-    os.makedirs("data", exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.executescript("""
@@ -141,7 +148,9 @@ def init_database():
     metricas['kd_ratio']  = metricas['kd_ratio'].round(2)
     metricas['adr_medio'] = metricas['adr_medio'].round(1)
     metricas['kast_medio']= metricas['kast_medio'].round(1)
-    conn.execute("DROP TABLE IF EXISTS metricas_jogador")
+    cursor2 = conn.cursor()
+    cursor2.execute("DROP TABLE IF EXISTS metricas_jogador")
+    conn.commit()
     metricas.to_sql('metricas_jogador', conn, if_exists='append', index=False)
     conn.close()
 
@@ -465,7 +474,11 @@ elif pagina == "👤 Perfil do Jogador":
     jogadores_lista = df.sort_values('partidas', ascending=False)['jogador_nome'].tolist()
     jogador_nome = st.selectbox("🔍 Buscar jogador", jogadores_lista)
 
-    jogador = df[df['jogador_nome'] == jogador_nome].iloc[0]
+    resultado = df[df['jogador_nome'] == jogador_nome]
+    if resultado.empty:
+        st.warning("Nenhum dado encontrado para este jogador.")
+        st.stop()
+    jogador = resultado.iloc[0]
     jogador_id = int(jogador['jogador_id'])
     historico = load_historico_jogador(jogador_id)
     cor = get_avatar_color(jogador_nome)
@@ -595,8 +608,13 @@ elif pagina == "⚔️ Comparar Jogadores":
     with col2:
         j2_nome = st.selectbox("Jogador 2", jogadores_lista, index=1)
 
-    j1 = df[df['jogador_nome'] == j1_nome].iloc[0]
-    j2 = df[df['jogador_nome'] == j2_nome].iloc[0]
+    r1 = df[df['jogador_nome'] == j1_nome]
+    r2 = df[df['jogador_nome'] == j2_nome]
+    if r1.empty or r2.empty:
+        st.warning("Dados insuficientes para comparação.")
+        st.stop()
+    j1 = r1.iloc[0]
+    j2 = r2.iloc[0]
     cor1 = get_avatar_color(j1_nome)
     cor2 = get_avatar_color(j2_nome)
 
