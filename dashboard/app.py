@@ -141,7 +141,9 @@ def init_database():
     metricas['kd_ratio']  = metricas['kd_ratio'].round(2)
     metricas['adr_medio'] = metricas['adr_medio'].round(1)
     metricas['kast_medio']= metricas['kast_medio'].round(1)
-    metricas.to_sql('metricas_jogador', conn, if_exists='replace', index=False)
+    with conn:
+    conn.execute("DROP TABLE IF EXISTS metricas_jogador")
+metricas.to_sql('metricas_jogador', conn, if_exists='append', index=False)
     conn.close()
 
 # Rodar inicialização antes de qualquer coisa
@@ -312,7 +314,7 @@ df = load_metricas()
 # ==================== SIDEBAR ====================
 with st.sidebar:
     st.markdown(f'<div style="padding:8px 0 16px;font-size:11px;color:{TEXT_MUTED};text-transform:uppercase;letter-spacing:1px;">Navegação</div>', unsafe_allow_html=True)
-    pagina = st.radio("", ["📊 Visão Geral", "👤 Perfil do Jogador", "⚔️ Comparar Jogadores"], label_visibility="collapsed")
+    pagina = st.radio("Navegação", ["📊 Visão Geral", "👤 Perfil do Jogador", "⚔️ Comparar Jogadores"], label_visibility="collapsed")
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown(f"""
     <div style="font-size:12px;color:{TEXT_MUTED};display:flex;flex-direction:column;gap:8px;">
@@ -457,7 +459,7 @@ if pagina == "📊 Visão Geral":
                       font_color='#CBD5E1', height=420,
                       xaxis=dict(gridcolor='#2D2D4E'), yaxis=dict(gridcolor='#2D2D4E'),
                       coloraxis_colorbar=dict(bgcolor='rgba(26,26,46,0.8)', bordercolor='#2D2D4E'))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ==================== PERFIL DO JOGADOR ====================
 elif pagina == "👤 Perfil do Jogador":
@@ -545,7 +547,7 @@ elif pagina == "👤 Perfil do Jogador":
             legend=dict(bgcolor='rgba(0,0,0,0)', font=dict(size=11)),
             margin=dict(t=20)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with col2:
         st.markdown(f'<div class="section-title">{ICONS["map"]} ADR por Mapa</div>', unsafe_allow_html=True)
@@ -582,7 +584,7 @@ elif pagina == "👤 Perfil do Jogador":
     fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(26,26,46,0.8)',
                       font_color='#CBD5E1', height=260,
                       xaxis=dict(gridcolor='#2D2D4E'), yaxis=dict(gridcolor='#2D2D4E'), bargap=0.1)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 # ==================== COMPARAR JOGADORES ====================
 elif pagina == "⚔️ Comparar Jogadores":
