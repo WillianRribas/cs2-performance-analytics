@@ -141,9 +141,8 @@ def init_database():
     metricas['kd_ratio']  = metricas['kd_ratio'].round(2)
     metricas['adr_medio'] = metricas['adr_medio'].round(1)
     metricas['kast_medio']= metricas['kast_medio'].round(1)
-    with conn:
     conn.execute("DROP TABLE IF EXISTS metricas_jogador")
-metricas.to_sql('metricas_jogador', conn, if_exists='append', index=False)
+    metricas.to_sql('metricas_jogador', conn, if_exists='append', index=False)
     conn.close()
 
 # Rodar inicialização antes de qualquer coisa
