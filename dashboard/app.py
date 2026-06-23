@@ -320,7 +320,7 @@ st.markdown(f"""
         </svg>
     </div>
     <div>
-        <h1 style="margin:0;font-size:26px;font-weight:800;color:#F1F5F9;letter-spacing:-0.5px;">CS2 Performance Analytics</h1>
+        <h1 style="margin:0;font-size:26px;font-weight:800;color:#F1F5F9;letter-spacing:-0.5px;">Analise de Performace de Jogadores Profissionais de Counter Strike 2</h1>
         <p style="margin:4px 0 0;color:{TEXT_MUTED};font-size:13px;">Análise de desempenho de jogadores profissionais · Tier 1, 2 e 3</p>
     </div>
 </div>
