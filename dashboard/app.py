@@ -281,7 +281,7 @@ def card_jogador_html(row, rank=None):
     </div>"""
 
 # ==================== CONFIG ====================
-st.set_page_config(page_title="CS2 Performance Analytics", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="Analise de Performace de Jogadores Profissionais de Counter Strike 2", page_icon="🎯", layout="wide")
 
 st.markdown(f"""
 <style>
